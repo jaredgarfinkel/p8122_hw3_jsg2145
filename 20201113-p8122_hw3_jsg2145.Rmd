@@ -1,0 +1,274 @@
+---
+title: "20201113-p8122_hw3_jsg2145"
+author: "Jared Garfinkel"
+date: "11/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(viridis)
+library(ggdag)
+library(mlogit)
+library(personalized)
+library(tableone)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	message = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+### Read in data
+
+```{r}
+data = read_csv("./data/hW3 data.csv") %>% 
+  janitor::clean_names()
+data
+```
+
+```{r}
+skimr::skim(data)
+```
+
+The age range is 16 to 55. It appears the participants tend to be younger based on a right skewed histogram.
+
+The education in years range is 0 to 18. The education seems slightly left skewed, with an average of about 10.3 years of education.
+
+The range of income is from 0 to 60308 in 1978. The salaries are heavily right skewed with half earning less than 4759 in the final year of the study.
+
+# Part 1
+
+## Exercise 1
+
+## DAGs
+
+The relationships of all 10 variables are described below:
+
+(1) Older people typically earn more. This affects (2, 3, 4)earnings in all years.
+
+(5) Black and (6) hispanic people typically earn less. This affects (2, 3, 4) earnings in all years.
+
+(7) Married folks may not have as much time to take (8) job training.
+
+(2, 3) Previous income will have an impact on (4) future earning.
+
+Those with a (9) high school degree may earn more than those without.
+
+A (9) high school degree depends on the (10) number of years of education.
+
+Those with (10) more education may be more likely to seek (8) further training.
+
+(7) Married folks tend to be (1) older.
+
+```{r, fig.width = 12, fig.height = 10}
+set.seed(719)
+training_dag = dagify(re78 ~ treat + re74 + re75 + nodegree + age + black + hispan,
+                      treat ~ educ + married,
+                      re74 ~ nodegree + age + black + hispan,
+                      re75 ~ nodegree + age + black + hispan,
+                      nodegree ~ educ,
+                      married ~ age,
+                      labels = c(treat = "Training",
+                                 re74 = "Income in\n 1974",
+                                 re75 = "Income in\n 1975",
+                                 re78 = "Income in\n 1978",
+                                 nodegree = "High School\n Degree",
+                                 married = "Married",
+                                 black = "African American",
+                                 hispan = "Latino/a",
+                                 educ = "Education (years)",
+                                 age = "Age (years)"),
+                      exposure = "treat",
+                      outcome = "re78")
+
+ggdag(training_dag, text = FALSE, use_labels = "label")
+```
+
+```{r}
+data_mlogit <- mlogit.data(data,choice="treat",shape="wide")
+fit_bcl<-mlogit(treat ~ 0 |age + educ + hispan + black + nodegree + re74 + re75 + married, data=data_mlogit)
+summary(fit_bcl)
+```
+```{r}
+ps.model <- glm(treat ~ age + educ + hispan + black + nodegree + re74 + re75 + married, data = data, family = binomial)
+summary(ps.model)
+```
+```{r}
+ps <- predict(ps.model, type="response")
+```
+
+```{r}
+prop.func <- function(x = data, trt = treat) {
+  # fit propensity score model
+  propens.model <- glm(trt ~ age + educ + hispan + black + nodegree + re74 + re75 + married, data = x, family = binomial)
+  pi.x <- predict(propens.model, type = "response")
+  return(pi.x)
+}
+```
+
+
+```{r}
+check.overlap(x = data,
+              trt = data$treat,
+              propensity.func = prop.func)
+```
+
+```{r}
+check.overlap(x = data,
+              trt = data$treat,
+              type = "both",
+              propensity.func = prop.func)
+```
+
+## check overlap
+
+```{r}
+min(ps[data$treat==1])
+ps[which(data$treat==0)] <= min(ps[data$treat==1])
+
+max(ps[data$treat==0])
+ps[which(data$treat==1)] >= max(ps[data$treat==0])
+```
+
+```{r}
+data2 = data[ps>=min(ps[data$treat==1]) & ps <= max(ps[data$treat==0]),] 
+dim(data2)
+dim(data)
+```
+
+After eliminating non-overlapping propensity scores, 549 observations remain from 614.
+
+```{r}
+### refitting propensity score model
+ps.model2<-glm(treat~age + educ + hispan + black + nodegree + re74 + re75 + married, data=data2 , family = binomial)
+summary(ps.model2)
+
+ps2 <- predict(ps.model2, type="response") #gets the propensity scores for each unit, based on the model
+check.overlap(x = data2,
+              trt = data2$treat,
+              propensity.func = prop.func)
+check.overlap(x = data2,
+              trt = data2$treat,
+              type = "both",
+              propensity.func = prop.func)
+```
+
+```{r}
+vars <- c("age", "educ", "hispan", "black", "nodegree", "re74", "re75", "married")
+
+## Construct a table
+tabpresub <- CreateTableOne(vars = vars, strata = "treat", data = data, test = FALSE)
+
+tabpresub_pret <- CreateTableOne(vars = vars, strata = "treat", data = data, test = FALSE)
+tabpresub_postt <- CreateTableOne(vars = vars, strata = "treat", data = data2, test = FALSE)
+```
+
+```{r}
+## Show table with SMD
+
+print(tabpresub_pret, smd = TRUE)
+
+print(tabpresub_postt, smd = TRUE)
+```
+
+# Exercise 5
+
+The coviariates appear to be unevenly distributed. 
+
+The SMD of the variable, black, is higher than would be desired after trimming.
+
+# Exercise 6
+
+```{r}
+subclass.breaks = quantile(ps2, c(.20, .40, .60, .80)) # bins (initial try - modify as needed)
+subclass = ps2
+subclass = as.numeric(ps2>subclass.breaks[1])
+subclass[which(ps2>subclass.breaks[1]& ps2<=subclass.breaks[2])]<- 1
+subclass[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])]<- 2
+subclass[which(ps2>subclass.breaks[3]&ps2<=subclass.breaks[4])]<- 3
+subclass[which(ps2>subclass.breaks[4])] <- 4
+table(data2$treat, subclass)
+```
+
+There are less than 10 individuals in each of the bottom 2 subclasses.
+
+```{r}
+subclass.breaks = quantile(ps2, c(.25, .5, .75)) # bins (initial try - modify as needed)
+subclass = ps2
+subclass = as.numeric(ps2>subclass.breaks[1])
+subclass[which(ps2>subclass.breaks[1]& ps2<=subclass.breaks[2])]<- 1
+subclass[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])]<- 2
+subclass[which(ps2>subclass.breaks[3])]<- 3
+
+table(data2$treat, subclass)
+```
+
+Slightly better with 4 subclasses, but the lowest subclass is too small.
+
+```{r}
+subclass.breaks = quantile(ps2, c(.33, .67)) # bins (initial try - modify as needed)
+subclass = ps2
+subclass = as.numeric(ps2>subclass.breaks[1])
+subclass[which(ps2>subclass.breaks[1]& ps2<=subclass.breaks[2])]<- 1
+subclass[which(ps2>subclass.breaks[2])]<- 2
+
+table(data2$treat, subclass)
+```
+
+Even with 3 subclasses there is a subclass that is small.
+
+# Exercise 7
+
+```{r}
+#looking at propensity scores within subclasses
+prop.func <- function(x, trt) {
+  
+  ps2[which(ps2 <= subclass.breaks[1])]
+}
+data2$ps <-ps2
+check.overlap(x = data2[which(data2$ps <=subclass.breaks[1]),],
+              trt = data2$treat[which(data2$ps <= subclass.breaks[1])],
+              type = "both",
+              propensity.func = prop.func)
+```
+
+
+```{r}
+prop.func <- function(x, trt) {
+ 
+  ps2[which(ps2>subclass.breaks[1]&ps2<=subclass.breaks[2])]
+}
+
+data2$ps <-ps2
+check.overlap(x = data2[which(ps2>subclass.breaks[1]&ps2<=subclass.breaks[2]),],
+              trt = data2$treat[which(ps2>subclass.breaks[1]&ps2<=subclass.breaks[2])],
+              type = "both",
+              propensity.func = prop.func)
+
+```
+
+```{r}
+
+prop.func <- function(x, trt) {
+  
+  ps2[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])]
+}
+data2$ps <- ps2
+check.overlap(x = data2[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3]),],
+              trt = data2$treat[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])],
+              type = "both",
+              propensity.func = prop.func)
+
+```
+
