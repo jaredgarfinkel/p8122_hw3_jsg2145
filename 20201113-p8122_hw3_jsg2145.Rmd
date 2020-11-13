@@ -260,15 +260,14 @@ check.overlap(x = data2[which(ps2>subclass.breaks[1]&ps2<=subclass.breaks[2]),],
 
 ```{r}
 
-prop.func <- function(x, trt) {
-  
-  ps2[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])]
-}
-data2$ps <- ps2
-check.overlap(x = data2[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3]),],
-              trt = data2$treat[which(ps2>subclass.breaks[2]&ps2<=subclass.breaks[3])],
-              type = "both",
-              propensity.func = prop.func)
-
+ prop.func <- function(x, trt)
+ {
+   ps2[which(ps2>subclass.breaks[2])]
+ }
+ data2$ps <-ps2
+ check.overlap(x = data2[which(ps2>subclass.breaks[2]),],
+               trt = data2$treat[which(ps2>subclass.breaks[2])],
+               type = "both",
+               propensity.func = prop.func)
 ```
 
