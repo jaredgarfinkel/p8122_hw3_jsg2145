@@ -12,6 +12,7 @@ library(ggdag)
 library(mlogit)
 library(personalized)
 library(tableone)
+library(ri)
 knitr::opts_chunk$set(
 	echo = TRUE,
 	warning = FALSE,
@@ -73,10 +74,10 @@ Those with (10) more education may be more likely to seek (8) further training.
 
 ```{r, fig.width = 12, fig.height = 10}
 set.seed(719)
-training_dag = dagify(re78 ~ treat + re74 + re75 + nodegree + age + black + hispan,
+training_dag = dagify(re78 ~ treat + re74 + re75 + nodegree + age + black + hispan + educ,
                       treat ~ educ + married,
-                      re74 ~ nodegree + age + black + hispan,
-                      re75 ~ nodegree + age + black + hispan,
+                      re74 ~ nodegree + age + black + hispan + educ,
+                      re75 ~ nodegree + age + black + hispan + educ,
                       nodegree ~ educ,
                       married ~ age,
                       labels = c(treat = "Training",
@@ -217,7 +218,7 @@ table(data2$treat, subclass)
 Slightly better with 4 subclasses, but the lowest subclass is too small.
 
 ```{r}
-subclass.breaks = quantile(ps2, c(.33, .67)) # bins (initial try - modify as needed)
+subclass.breaks = quantile(ps2, c(.5, .67)) # bins (initial try - modify as needed)
 subclass = ps2
 subclass = as.numeric(ps2>subclass.breaks[1])
 subclass[which(ps2>subclass.breaks[1]& ps2<=subclass.breaks[2])]<- 1
@@ -226,9 +227,8 @@ subclass[which(ps2>subclass.breaks[2])]<- 2
 table(data2$treat, subclass)
 ```
 
-Even with 3 subclasses there is a subclass that is small.
+Even with 3 subclasses stratified at 0, 0.5, and 0.67 there is a subclass that is small.
 
-# Exercise 7
 
 ```{r}
 #looking at propensity scores within subclasses
@@ -271,3 +271,136 @@ check.overlap(x = data2[which(ps2>subclass.breaks[1]&ps2<=subclass.breaks[2]),],
                propensity.func = prop.func)
 ```
 
+```{r}
+table(data2$treat, subclass)
+```
+
+# Exercise 7
+
+```{r}
+names(data2)
+head(data2)
+```
+
+```{r}
+vars = c("age", "educ", "black", "hispan", "nodegree", "re74", "re75")
+tabUnmatched_s0 <- CreateTableOne(vars = vars, strata = "treat", data = data2[which(subclass==0),], test = FALSE)
+tabUnmatched_s1 <- CreateTableOne(vars = vars, strata = "treat", data = data2[which(subclass==1),], test = FALSE)
+tabUnmatched_s2 <- CreateTableOne(vars = vars, strata = "treat", data = data2[which(subclass==2),], test = FALSE)
+```
+
+```{r}
+print(tabUnmatched_s0, smd = TRUE)
+print(tabUnmatched_s1, smd = TRUE)
+print(tabUnmatched_s2, smd = TRUE)
+```
+
+The stratification reduces the SMD among covariates in each subclass.
+
+## Exercise 8
+
+```{r}
+ACE0 <- mean(data2$re78[which(subclass==0 & data2$treat==1)])-mean(data2$re78[which(subclass==0 & data2$treat==0)])
+ACE1 <- mean(data2$re78[which(subclass==1 & data2$treat==1)])-mean(data2$re78[which(subclass==1 & data2$treat==0)])
+ACE2 <- mean(data2$re78[which(subclass==2 & data2$treat==1)])-mean(data2$re78[which(subclass==2 & data2$treat==0)])
+```
+
+```{r}
+ace <- (nrow(data2[which(subclass == 0),])/nrow(data2))*ACE0 + (nrow(data2[which(subclass == 1),])/nrow(data2)) * ACE1 + (nrow(data2[which(subclass == 2),])/nrow(data2)) * ACE2
+```
+
+```{r}
+ace
+```
+
+```{r}
+v01 <- var(data2$re78[which(subclass==0 & data2$treat==1)])
+v00 <- var(data2$re78[which(subclass==0 & data2$treat==0)])
+
+v11 <- var(data2$re78[which(subclass==1 & data2$treat==1)])
+v10 <- var(data2$re78[which(subclass==1 & data2$treat==0)])
+
+v21 <- var(data2$re78[which(subclass==2 & data2$treat==1)])
+v20 <- var(data2$re78[which(subclass==2 & data2$treat==0)])
+```
+
+```{r}
+n0 <- nrow(data2[which(subclass==0),])
+n1 <- nrow(data2[which(subclass==1),])
+n2 <- nrow(data2[which(subclass==2),])
+```
+
+```{r}
+n01 <- nrow(data2[which(subclass==0& data2$treat==1),])
+n11 <- nrow(data2[which(subclass==1& data2$treat==1),])
+n21 <- nrow(data2[which(subclass==2& data2$treat==1),])
+```
+
+```{r}
+n00 <- nrow(data2[which(subclass==0& data2$treat==0),])
+n10 <- nrow(data2[which(subclass==1& data2$treat==0),])
+n20 <- nrow(data2[which(subclass==2& data2$treat==0),])
+```
+
+```{r}
+varace <-(n1)^2/nrow(data2)^2*((v11/n11)+(v10/n10)) + (n2)^2/nrow(data2)^2 * ((v21/n21) + (v20/n20)) + (n0)^2/nrow(data2)^2 * ((v01/n01) + (v00/n00))
+```
+
+```{r}
+sdace<-sqrt(varace)
+
+CIL=ace-sdace*1.96
+CIU=ace+sdace*1.96
+```
+
+The marginal average causal effect of job training on earnings is `r round(ace, 2)` USD (SD `r round(sdace, 2)`, 95%CI [`r round(CIL, 2)`, `r round(CIU, 2)`].
+
+### p-value
+
+```{r}
+t_obs = data2 %>% 
+  summarize(t_obs = sum(re78*(treat==1)/sum(treat==1) - re78*(treat==0)/sum(treat==0)))
+```
+```{r}
+# data2 %>% 
+#   filter(treat==1) %>% 
+#   nrow()
+A = c(rep(1, 177), rep(0, 372))
+Abold <- genperms(A,maxiter = 12870)
+```
+
+```{r}
+rdist <- rep(NA, times = ncol(Abold))
+for (i in 1:ncol(Abold)) {
+  A_tilde <- Abold[, i]
+  rdist[i] <- mean(data2$re78[A_tilde == 1]) - mean(data2$re78[A_tilde == 0])
+}
+rdist
+hist(rdist)
+
+# p-value
+pval <- mean(rdist >= pull(t_obs, t_obs))
+pval
+```
+
+
+The null hypothesis ($H_0: ACE = 0$) cannot be rejected (p = 0.48).
+
+This indicates that there is not evidence of a causal relationship between training and income over the study period after trimming observations with non-overlapping propensity scores and stratifying based on baseline covariates. It's possible that other  
+
+# Exercise 8
+
+```{r}
+income_glm = glm(re78 ~ treat * (married + educ) + (re74 + re75) * (black + hispan + age + nodegree), data = data)
+summary(income_glm)
+```
+
+It appears that by direct adjustment, training programs are not significant in the model (p = 0.32) indicating that we cannot reject the null hypothesis.
+
+This is comparable to the result obtained through subclassification.
+
+# Exercise 9
+
+To create a DAG model before analysis is considered due diligence to adhere to unbiased propensity scores assumptions. The DAG can be used in direct adjustment of confounders to determine interaction terms, mediators and colliders.
+
+# Part 2
