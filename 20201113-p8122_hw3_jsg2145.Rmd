@@ -134,7 +134,7 @@ check.overlap(x = data,
 
 ## check overlap
 
-```{r}
+```{r, results = "hide"}
 min(ps[data$treat==1])
 ps[which(data$treat==0)] <= min(ps[data$treat==1])
 
@@ -375,7 +375,7 @@ for (i in 1:ncol(Abold)) {
   A_tilde <- Abold[, i]
   rdist[i] <- mean(data2$re78[A_tilde == 1]) - mean(data2$re78[A_tilde == 0])
 }
-rdist
+# rdist
 hist(rdist)
 
 # p-value
@@ -404,3 +404,21 @@ This is comparable to the result obtained through subclassification.
 To create a DAG model before analysis is considered due diligence to adhere to unbiased propensity scores assumptions. The DAG can be used in direct adjustment of confounders to determine interaction terms, mediators and colliders.
 
 # Part 2
+
+## Exercise a
+
+| Exercise 1 | Exercise 2 | Exercise 3 | Exercise 4 | Exercise 5 |
+|------------|------------|------------|------------|------------|
+| Y ~ A + L  | Y ~ A + U  | Y ~ U      | Y ~ A + L  | Y ~ A + $U_1$ |
+| A ~ L      | A ~ L      | L ~ U + A  | A ~ U      | A ~ $U_2$  |
+|            | L ~ U      |            | L ~ U      | L ~ $U_1 + U_2$ |
+
+## Exercise b
+
+| Exercise | Condition on L? |
+|----------|-----------------|
+| Exercise 1 | Yes, L is the only confounder |
+| Exercise 2 | Yes, conditioning on L adjusts for confounding by closing the path from U to the exposure |
+| Exercise 3 | No, conditioning on L opens a backdoor path from U to A |
+| Exercise 4 | Yes, conditioning on L adjusts for confounding by closing the path from U to the outcome |
+| Exercise 5 | No, conditioning on L opens a backdoor path from $U_1$ to $U_2$, which opens paths for both to become confounders |
